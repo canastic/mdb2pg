@@ -1,6 +1,8 @@
 import com.healthmarketscience.jackcess.DataType
 import com.healthmarketscience.jackcess.DatabaseBuilder
 import com.healthmarketscience.jackcess.Table
+import config.mdbFilePath
+import config.postgresConnString
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
@@ -8,29 +10,16 @@ import java.sql.ResultSet
 import java.sql.Statement
 import java.sql.Types
 
+object config {
+    val postgresConnString = System.getenv("MDB2PG_POSTGRES_CONNSTRING")
+    val mdbFilePath = System.getenv("MDB2PG_FILE_PATH")
+}
+
 fun main() {
-    DriverManager.getConnection("jdbc:postgresql://localhost/indapack?user=tcard&password=&ssl=false").use { pgConn ->
+    DriverManager.getConnection(postgresConnString).use { pgConn ->
         val pgMeta = pgConn.metaData
 
-        sequenceOf(
-            "ARTICULOS.mdb",
-            "Albaranes.mdb",
-            "FORMATOS.mdb",
-            "clientes.MDB",
-            "consumos.mdb",
-            "familias.MDB",
-            "horas.mdb",
-            "inventarios.MDB",
-            "ivas.MDB",
-            "rangos.mdb",
-            "recetas.mdb",
-            "secciones.mdb",
-            "venta_clientes3_7_2019.mdb",
-            "venta_clientes3_8_2019.mdb",
-            "venta_clientes3_9_2019.mdb"
-        )
-        .map { DatabaseBuilder.open(File("/Users/tcard/canastic/lc/indapack/dos/t-165/DATOS_TIENDAS/$it")) }
-        .forEach { db -> db.use { db ->
+        DatabaseBuilder.open(File(mdbFilePath)). use { db ->
             db.tableNames.map { db.getTable(it) }.forEach { table ->
                 val tableName = "${db.file.name}.${table.name}"
                 println("Mapping $tableName...")
@@ -57,9 +46,11 @@ fun main() {
                 }
 
                 for (row in table) {
-                    pgConn.prepareStatement("INSERT INTO \"$tableName\" VALUES (${
+                    pgConn.prepareStatement(
+                        "INSERT INTO \"$tableName\" VALUES (${
                         (0 until table.columnCount).joinToString { "?" }
-                    });").use { stmt ->
+                        });"
+                    ).use { stmt ->
                         for ((i, column) in table.columns.withIndex()) {
                             stmt.setObject(i + 1, column.getRowValue(row), column.sqlType)
                         }
@@ -67,7 +58,7 @@ fun main() {
                     }
                 }
             }
-        }}
+        }
     }
 }
 
@@ -101,23 +92,25 @@ fun Connection.createTable(tableName: String, table: Table) {
             Types.LONGVARCHAR -> "TEXT"
             else -> throw Exception("unsupported SQL type ${column.type.asSql()} for mdb type ${column.type} for column $tableName.${column.name}")
         }} NULL"
-    }.joinToString(separator=",\n")
+    }.joinToString(separator = ",\n")
     createStatement().use { stmt ->
         stmt.printAndExecute("CREATE TABLE \"$tableName\" ($columns);")
     }
 
     for (index in table.indexes) {
         createStatement().use { stmt ->
-            stmt.printAndExecute("CREATE ${if (index.isUnique) {
-                "UNIQUE "
-            } else {
-                ""
-            }}INDEX \"index_${tableName}_${index.name}\" ON \"$tableName\" (${
+            stmt.printAndExecute(
+                "CREATE ${if (index.isUnique) {
+                    "UNIQUE "
+                } else {
+                    ""
+                }}INDEX \"index_${tableName}_${index.name}\" ON \"$tableName\" (${
                 index.columns.joinToString { "\"${it.name}\" ${if (it.isAscending) { "ASC"} else { "DESC" }}" }
-            });")
+                });"
+            )
         }
         if (index.isPrimaryKey) {
-            createStatement().use{ stmt ->
+            createStatement().use { stmt ->
                 stmt.printAndExecute("ALTER TABLE \"$tableName\" ADD PRIMARY KEY USING INDEX \"${index.name}\";")
             }
         }
@@ -128,5 +121,3 @@ private fun Statement.printAndExecute(sql: String): Boolean {
     println(sql)
     return execute(sql)
 }
-
-
