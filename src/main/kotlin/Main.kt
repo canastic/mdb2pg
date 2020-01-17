@@ -52,7 +52,7 @@ fun main() {
                         });"
                     ).use { stmt ->
                         for ((i, column) in table.columns.withIndex()) {
-                            stmt.setObject(i + 1, column.getRowValue(row), column.sqlType)
+                            stmt.setObject(i + 1, column.getRowValue(row), column.type.asSql())
                         }
                         stmt.execute()
                     }
@@ -74,6 +74,7 @@ fun ResultSet.iterable(): Iterable<ResultSet> = object : Iterable<ResultSet> {
 
 fun DataType.asSql(): Int = when (this) {
     DataType.MEMO -> Types.LONGVARCHAR
+    DataType.GUID -> Types.VARCHAR
     else -> this.sqlType
 }
 
@@ -90,6 +91,9 @@ fun Connection.createTable(tableName: String, table: Table) {
             Types.VARCHAR -> "VARCHAR"
             Types.NUMERIC -> "NUMERIC"
             Types.LONGVARCHAR -> "TEXT"
+            Types.BINARY -> "BYTEA"
+            Types.VARBINARY -> "BYTEA"
+            Types.LONGVARBINARY -> "BYTEA"
             else -> throw Exception("unsupported SQL type ${column.type.asSql()} for mdb type ${column.type} for column $tableName.${column.name}")
         }} NULL"
     }.joinToString(separator = ",\n")
